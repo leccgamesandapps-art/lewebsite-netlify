@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LE Chess Arena — 3D Pieces</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --white: #f5f5f5;
+      --black: #111;
+      --accent: #ffcc00;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+    }
+
+    /* ========== 3D CHECKERED FLOOR + FOG (inspired by reference) ========== */
+    .scene {
+      position: fixed;
+      inset: 0;
+      perspective: 900px;
+      perspective-origin: 50% 38%;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .floor {
+      position: absolute;
+      left: 50%;
+      top: 52%;
+      width: 320vw;
+      height: 320vw;
+      transform: translate(-50%, -28%) rotateX(74deg);
+      transform-origin: center top;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          #0e0e0e 0px,
+          #0e0e0e 90px,
+          #f2f2f2 90px,
+          #f2f2f2 180px
+        ),
+        repeating-linear-gradient(
+          0deg,
+          #0e0e0e 0px,
+          #0e0e0e 90px,
+          #f2f2f2 90px,
+          #f2f2f2 180px
+        );
+      background-size: 180px 180px;
+      animation: floorDrift 48s linear infinite;
+      will-change: background-position;
+    }
+
+    @keyframes floorDrift {
+      0%   { background-position: 0 0; }
+      100% { background-position: 180px 180px; }
+    }
+
+    /* Horizon fog + atmospheric depth matching reference */
+    .fog {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 130% 90% at 50% 12%, rgba(255,255,255,0.72) 0%, transparent 52%),
+        linear-gradient(to bottom,
+          rgba(255,255,255,0.82) 0%,
+          rgba(245,245,250,0.5) 16%,
+          rgba(200,200,210,0.18) 34%,
+          transparent 52%
+        ),
+        linear-gradient(to top,
+          rgba(0,0,0,0.88) 0%,
+          rgba(0,0,0,0.45) 22%,
+          transparent 48%
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .mist {
+      position: absolute;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse 95% 42% at 28% 12%, rgba(255,255,255,0.28) 0%, transparent 55%),
+        radial-gradient(ellipse 75% 35% at 72% 22%, rgba(255,255,255,0.2) 0%, transparent 48%);
+      animation: mistFloat 20s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 2;
+      mix-blend-mode: screen;
+    }
+
+    @keyframes mistFloat {
+      0%   { opacity: 0.65; transform: translateX(-4%) scale(1); }
+      100% { opacity: 1;    transform: translateX(4%) scale(1.06); }
+    }
+
+    /* ========== UI LAYER ========== */
+    .ui {
+      position: relative;
+      z-index: 10;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      pointer-events: none;
+    }
+
+    .ui > * { pointer-events: auto; }
+
+    /* NAVS */
+    .nav {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      padding: 10px 12px;
+      flex-shrink: 0;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .nav.top {
+      background: linear-gradient(to bottom, rgba(255,255,255,0.94), rgba(255,255,255,0.78));
+      border-bottom: 1px solid rgba(0,0,0,0.1);
+      box-shadow: 0 10px 36px rgba(0,0,0,0.18);
+    }
+
+    .nav.bottom {
+      background: linear-gradient(to top, rgba(8,8,8,0.96), rgba(18,18,18,0.88));
+      border-top: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 -10px 36px rgba(0,0,0,0.45);
+    }
+
+    .nav a {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      overflow: hidden;
+      background: rgba(255,255,255,0.18);
+      border: 2.5px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  border-color 0.2s,
+                  box-shadow 0.28s;
+    }
+
+    .nav.bottom a {
+      background: rgba(35,35,35,0.75);
+    }
+
+    .nav a img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: block;
+      transition: transform 0.3s;
+    }
+
+    .nav a:hover { transform: scale(1.09); }
+
+    .nav a.active {
+      border-color: var(--accent);
+      transform: scale(1.15);
+      box-shadow: 0 0 0 3px rgba(255,204,0,0.4),
+                  0 0 28px rgba(255,204,0,0.6);
+      z-index: 2;
+    }
+
+    .nav a.active img { transform: scale(1.06); }
+
+    /* CENTER DISPLAY */
+    .center {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 12px 16px;
+      position: relative;
+    }
+
+    .close {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      width: 44px;
+      height: 44px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 22px;
+      text-decoration: none;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.22);
+      transition: background 0.2s, transform 0.2s;
+      z-index: 20;
+    }
+
+    .close:hover {
+      background: rgba(0,0,0,0.75);
+      transform: scale(1.1);
+    }
+
+    #label {
+      font-size: clamp(32px, 11vw, 48px);
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      text-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      transition: color 0.4s, text-shadow 0.4s;
+      margin-bottom: 4px;
+    }
+
+    #sub {
+      font-size: 13px;
+      letter-spacing: 0.2em;
+      font-weight: 600;
+      opacity: 0.85;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      transition: color 0.4s;
+    }
+
+    .piece-wrap {
+      position: relative;
+      width: min(58vw, 240px);
+      height: min(58vw, 240px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #bigImg {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: none;
+      background: #fff;
+      box-shadow:
+        0 28px 55px rgba(0,0,0,0.55),
+        0 0 0 6px rgba(255,255,255,0.9),
+        0 0 50px rgba(255,255,255,0.3);
+      animation: pieceIn 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+    }
+
+    @keyframes pieceIn {
+      0% {
+        transform: scale(0.12) translateY(50px);
+        opacity: 0;
+        filter: blur(10px);
+      }
+      70% {
+        transform: scale(1.09) translateY(-8px);
+        opacity: 1;
+        filter: blur(0);
+      }
+      100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .piece-wrap.float #bigImg {
+      animation: pieceIn 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) forwards,
+                 floatY 3.4s ease-in-out 0.6s infinite;
+    }
+
+    @keyframes floatY {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-12px); }
+    }
+
+    #homeText {
+      font-size: clamp(22px, 6vw, 28px);
+      font-weight: 800;
+      line-height: 1.35;
+      color: #111;
+      text-shadow: 0 2px 14px rgba(255,255,255,0.65);
+      letter-spacing: 0.05em;
+    }
+
+    #homeText span {
+      display: block;
+      font-size: 0.52em;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      margin-top: 10px;
+      opacity: 0.72;
+    }
+
+    .glow {
+      position: absolute;
+      bottom: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 72%;
+      height: 26px;
+      background: radial-gradient(ellipse, rgba(255,255,255,0.5) 0%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.45s;
+      pointer-events: none;
+    }
+
+    .piece-wrap.show .glow { opacity: 1; }
+
+    @media (max-width: 380px) {
+      .nav { gap: 5px; padding: 8px; }
+      .piece-wrap { width: min(64vw, 200px); height: min(64vw, 200px); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 3D SCENE -->
+  <div class="scene">
+    <div class="floor"></div>
+    <div class="fog"></div>
+    <div class="mist"></div>
+  </div>
+
+  <!-- UI -->
+  <div class="ui">
+    <!-- TOP NAV - WHITE -->
+    <nav class="nav top">
+      <a href="#white_king" data-id="white_king"><img src="./white_king.png" alt="White King"></a>
+      <a href="#white_queen" data-id="white_queen"><img src="./white_queen.png" alt="White Queen"></a>
+      <a href="#white_knight" data-id="white_knight"><img src="./white_knight.png" alt="White Knight"></a>
+      <a href="#white_bishop" data-id="white_bishop"><img src="./white_bishop.png" alt="White Bishop"></a>
+      <a href="#white_rook" data-id="white_rook"><img src="./white_rook.png" alt="White Rook"></a>
+      <a href="#white_pawn" data-id="white_pawn"><img src="./white_pawn.png" alt="White Pawn"></a>
+    </nav>
+
+    <!-- CENTER -->
+    <div class="center" id="centerBox">
+      <a href="#home" class="close" id="closeBtn">✕</a>
+      <div id="label">CHOOSE</div>
+      <div id="sub">PICK A PIECE</div>
+      <div class="piece-wrap" id="pieceWrap">
+        <img id="bigImg" src="./white_king.png" alt="">
+        <div class="glow"></div>
+      </div>
+      <div id="homeText">♔ CHESS ARENA ♚<span>Top = White · Bottom = Black</span></div>
+    </div>
+
+    <!-- BOTTOM NAV - BLACK -->
+    <nav class="nav bottom">
+      <a href="#black_king" data-id="black_king"><img src="./black_king.png" alt="Black King"></a>
+      <a href="#black_queen" data-id="black_queen"><img src="./black_queen.png" alt="Black Queen"></a>
+      <a href="#black_knight" data-id="black_knight"><img src="./black_knight.png" alt="Black Knight"></a>
+      <a href="#black_bishop" data-id="black_bishop"><img src="./black_bishop.png" alt="Black Bishop"></a>
+      <a href="#black_rook" data-id="black_rook"><img src="./black_rook.png" alt="Black Rook"></a>
+      <a href="#black_pawn" data-id="black_pawn"><img src="./black_pawn.png" alt="Black Pawn"></a>
+    </nav>
+  </div>
+
+  <script>
+    const pieces = {
+      white_king:   { name: "King",   color: "white", file: "./white_king.png" },
+      white_queen:  { name: "Queen",  color: "white", file: "./white_queen.png" },
+      white_knight: { name: "Knight", color: "white", file: "./white_knight.png" },
+      white_bishop: { name: "Bishop", color: "white", file: "./white_bishop.png" },
+      white_rook:   { name: "Rook",   color: "white", file: "./white_rook.png" },
+      white_pawn:   { name: "Pawn",   color: "white", file: "./white_pawn.png" },
+      black_king:   { name: "King",   color: "black", file: "./black_king.png" },
+      black_queen:  { name: "Queen",  color: "black", file: "./black_queen.png" },
+      black_knight: { name: "Knight", color: "black", file: "./black_knight.png" },
+      black_bishop: { name: "Bishop", color: "black", file: "./black_bishop.png" },
+      black_rook:   { name: "Rook",   color: "black", file: "./black_rook.png" },
+      black_pawn:   { name: "Pawn",   color: "black", file: "./black_pawn.png" },
+    };
+
+    const label     = document.getElementById("label");
+    const sub       = document.getElementById("sub");
+    const bigImg    = document.getElementById("bigImg");
+    const homeText  = document.getElementById("homeText");
+    const closeBtn  = document.getElementById("closeBtn");
+    const pieceWrap = document.getElementById("pieceWrap");
+
+    function update() {
+      const hash = location.hash.replace("#", "");
+      document.querySelectorAll(".nav a").forEach(a => a.classList.remove("active"));
+
+      if (!hash || hash === "home" || !pieces[hash]) {
+        label.textContent = "CHOOSE";
+        label.style.color = "#111";
+        label.style.textShadow = "0 2px 16px rgba(255,255,255,0.55)";
+        sub.textContent = "PICK A PIECE";
+        sub.style.color = "#333";
+        bigImg.style.display = "none";
+        homeText.style.display = "block";
+        closeBtn.style.display = "none";
+        pieceWrap.classList.remove("float", "show");
+        return;
+      }
+
+      const p = pieces[hash];
+      const link = document.querySelector(`[data-id="${hash}"]`);
+      if (link) link.classList.add("active");
+
+      label.textContent = p.name;
+      sub.textContent = (p.color === "white" ? "WHITE" : "BLACK") + "  ·  " + hash.replace("_", " ").toUpperCase();
+
+      if (p.color === "white") {
+        label.style.color = "#111";
+        label.style.textShadow = "0 2px 18px rgba(255,255,255,0.75)";
+        sub.style.color = "#222";
+        closeBtn.style.color = "#111";
+        closeBtn.style.background = "rgba(255,255,255,0.75)";
+        closeBtn.style.borderColor = "rgba(0,0,0,0.12)";
+      } else {
+        label.style.color = "#fff";
+        label.style.textShadow = "0 4px 24px rgba(0,0,0,0.75)";
+        sub.style.color = "#ddd";
+        closeBtn.style.color = "#fff";
+        closeBtn.style.background = "rgba(0,0,0,0.55)";
+        closeBtn.style.borderColor = "rgba(255,255,255,0.25)";
+      }
+
+      bigImg.style.animation = "none";
+      void bigImg.offsetWidth;
+      bigImg.src = p.file;
+      bigImg.style.display = "block";
+      homeText.style.display = "none";
+      closeBtn.style.display = "flex";
+
+      pieceWrap.classList.remove("float", "show");
+      void pieceWrap.offsetWidth;
+      pieceWrap.classList.add("show");
+      setTimeout(() => pieceWrap.classList.add("float"), 600);
+    }
+
+    window.addEventListener("hashchange", update);
+    update();
+  </script>
+</body>
+</html>
